@@ -151,7 +151,7 @@ datagram the archive holds from one boot of it, summed over its boots. A datagra
 collector has says how many records fell in between; records exported before the archive's
 first datagram from a boot are not lost, they are before the archive.
 
-Every number in the report is a JSON integer.
+All the figures in the report are plain JSON integers.
 
 ## How the tool is built and run
 
