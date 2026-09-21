@@ -1,28 +1,36 @@
-# Verifier image. In separate mode harbor does NOT upload tests/ at verify time, so
-# this image must own everything the verifier needs: the tests themselves, any held-out
-# fixtures, and every tool test.sh invokes. Nothing may be installed at verify time.
-FROM public.ecr.aws/docker/library/gcc:13-bookworm@sha256:930f2ebe239275fa67226654cb79273ea34eee672ae61c8a39f689c37fb7ac5c
+# Verifier image. Runs in its own container, sees only the paths declared in `artifacts`, and
+# holds everything the agent never gets to see: the three archives, the report each one must
+# produce, and the archive service that serves them. It compiles the collected Zig itself and
+# runs the tool against an archive it starts, so the report has to come out of the agent's
+# own program talking the protocol.
 
-# Debian marks the system interpreter externally managed, so pytest goes in a venv.
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        python3 \
-        python3-venv \
-    && rm -rf /var/lib/apt/lists/* \
-    && python3 -m venv /venv \
-    && /venv/bin/pip install --no-cache-dir pytest==9.1.1 pytest-json-ctrf==0.5.2
+FROM public.ecr.aws/docker/library/python:3.13-slim-bookworm@sha256:01f42367a0a94ad4bc17111776fd66e3500c1d87c15bbd6055b7371d39c124fb
 
-# If the verifier executes anything the agent produced, it is running untrusted code.
-# Drop it to an unprivileged user that owns nothing outside its own scratch space.
-RUN useradd --system --uid 12000 --user-group --no-create-home --shell /usr/sbin/nologin sandbox \
-    && mkdir -p /work/out \
-    && chown sandbox:sandbox /work/out \
-    && chmod 700 /work/out
+ENV LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8 \
+    PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-COPY test.sh test_outputs.py /tests/
-COPY holdout/ /tests/holdout/
-RUN chmod -R a+rX /tests/holdout
+# The same Zig 0.14.1 the agent's box carries, from the same hash-pinned wheel, and the
+# verifier tooling from a hash-pinned lockfile. Nothing is installed at trial time.
+COPY zig-requirements.txt requirements.txt /tmp/
+RUN pip install --no-cache-dir --require-hashes --no-deps -r /tmp/zig-requirements.txt && rm -f /tmp/zig-requirements.txt
+RUN pip install --no-cache-dir --require-hashes --no-deps -r /tmp/requirements.txt && rm -f /tmp/requirements.txt
+RUN /usr/local/lib/python3.13/site-packages/ziglang/zig version
 
-# Landing directory for the declared artifact. Every artifact path in task.toml needs
-# its parent to exist here, or the upload fails with "Could not find the file ...".
-RUN mkdir -p /app
+RUN useradd --create-home --uid 10001 --shell /bin/bash runner
+
+# Landing directory for the declared artifact.
+RUN mkdir -p /app/flowkit/src /app/flowkit/bin
+RUN chown -R runner:runner /app && chmod 1755 /app
+
+# The archives, the reports and the service. Root only, and never present in any container
+# the agent reaches.
+COPY data /opt/truth
+COPY golden /opt/truth/golden
+COPY archive /opt/archive
+RUN chmod 700 /opt/truth /opt/archive
+
+# Separate mode does not upload tests/ into the image, so the image owns /tests itself.
+COPY . /tests/
+
+WORKDIR /app/flowkit

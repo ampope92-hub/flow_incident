@@ -1,19 +1,32 @@
-# Agent image. Nothing from tests/ or solution/ may ever be copied in here.
+# Agent image. Nothing from tests/ or solution/ is ever copied in here, and the archive's
+# datagrams are not here either: they live in the archive service's own image.
 #
-# Pin the base by digest so the image can never drift. To re-pin after changing the
-# tag:  docker buildx imagetools inspect <image>:<tag>
-# REPLACE this base with whatever your task actually needs.
-FROM public.ecr.aws/docker/library/gcc:13-bookworm@sha256:930f2ebe239275fa67226654cb79273ea34eee672ae61c8a39f689c37fb7ac5c
+# Non-canonical toolchain, justification: the task is written in Zig, which bookworm has no
+# apt package for; the ziglang wheel on PyPI is the Zig Software Foundation's own release
+# repackaged, and pinning it by hash is what makes the compiler reproducible.
+FROM public.ecr.aws/docker/library/python:3.13-slim-bookworm@sha256:01f42367a0a94ad4bc17111776fd66e3500c1d87c15bbd6055b7371d39c124fb
+
+ENV LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         asciinema \
         ca-certificates \
-        python3 \
+        curl \
         tmux \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app
+# Zig 0.14.1, the one compiler the task needs, from a hash-pinned wheel.
+COPY zig-requirements.txt /tmp/zig-requirements.txt
+RUN pip install --no-cache-dir --require-hashes --no-deps -r /tmp/zig-requirements.txt && rm -f /tmp/zig-requirements.txt
+RUN /usr/local/lib/python3.13/site-packages/ziglang/zig version
 
-COPY app/src/ /app/src/
-COPY app/data/ /app/data/
+# Where the archive is. The grader sets these to something else, so nothing may be built in.
+ENV ARCHIVE_HOST=127.0.0.1 \
+    ARCHIVE_PORT=9600
+
+WORKDIR /app/flowkit
+
+COPY app/flowkit/ /app/flowkit/
+RUN chmod +x /app/flowkit/build.sh /app/flowkit/run.sh

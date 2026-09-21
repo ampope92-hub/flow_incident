@@ -1,0 +1,1 @@
+CASE inside=10.20.0.0/16 suspect=10.20.3.17 from=1746277200000 to=1746284400000 exporters=border,core

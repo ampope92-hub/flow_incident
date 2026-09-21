@@ -1,11 +1,5 @@
-The summariser in /app is wrong. It runs, but the report it writes does not match what
-downstream expects.
+The SOC flagged a workstation this morning and I've been asked for the numbers before the incident call. The flow collector's archive is up on this box (`ARCHIVE_HOST` and `ARCHIVE_PORT` are in the environment) and it holds every export packet both routers sent it during the window, with the time each one arrived, plus the case line that says which host, which window and which network. The archive protocol, the packet layout, what we know about the two routers and the collector, and the report the SOC wants are in `/app/flowkit/SPEC.md`. `/app/flowkit/src/main.zig` is a stub right now; make it a tool that pulls the case and every export packet off the archive, works out what left the site and where the suspect went inside, and prints that as one line of JSON on standard output, laid out the way the spec says.
 
-Rebuild /app/out/report.json for the files under /app/data. The report is a JSON object with
-a "files" array — one entry per .txt file, each with its "name" and its "words" count — ordered
-by name, plus a "total_words" holding the sum of every word counted. It is indented by two
-spaces and ends with a trailing newline.
+The catch is that the two routers don't tell the same story. One of them samples, one of them keeps its own clock, one of them was power cycled part way through, the collector dropped some packets and then re-sent part of its spool after a restart. All of that is in the spec as fact; none of it is handled for you.
 
-Keep it driveable the way CI drives it: the program stays at /app/src/summarize.py and is run as
-`python3 /app/src/summarize.py --data <dir> --out <file>`. CI points it at directories other
-than the one shipped here.
+It has to be Zig, that's what the rest of the toolkit is in, and there's nothing on the box beyond the Zig standard library. The grader compiles the .zig files you leave under src the way the spec says, from main.zig, and runs the result from `/app/flowkit` three times: against the archive here on another address and port, against an archive you haven't seen with a different network, window, sampling rate and clock error, and against a small one reached by host name. It follows the page tokens the archive hands out, so anything copied out of this archive into the source is no use there. Every host row, every lateral row and both lost counts have to match exactly; one wrong number and the run fails.

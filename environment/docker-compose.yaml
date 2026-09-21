@@ -1,0 +1,31 @@
+services:
+  # The tool's container. The harness supplies its build and its keepalive command, so this
+  # file only adds where the archive is.
+  main:
+    environment:
+      ARCHIVE_HOST: "127.0.0.1"
+      ARCHIVE_PORT: "9600"
+
+  # The flow archive. The runner puts every service in one network namespace, so the socket is
+  # reachable on the loopback address from the tool's container. It is a separate container
+  # with a separate image: the datagrams are in this image and nowhere else.
+  archive:
+    build:
+      context: .
+      dockerfile: Dockerfile.archive
+    restart: unless-stopped
+    command:
+      - "python3"
+      - "/srv/archive/archive.py"
+      - "--data"
+      - "/srv/archive/sample"
+      - "--host"
+      - "127.0.0.1"
+      - "--port"
+      - "9600"
+      - "--page"
+      - "64"
+      # How this deployment writes the opaque page token. It is not the only way one can be
+      # written and SPEC.md says so.
+      - "--token-style"
+      - "plain"

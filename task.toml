@@ -1,77 +1,60 @@
-# TB3.0 task manifest.
-#
-# Every field below is required unless marked optional. The four prose fields
-# (difficulty/solution/verification/relevant_experience) are what a reviewer reads
-# first — write them last, once the task actually works, and write them honestly.
+name = "flow-incident"
 
-name = "REPLACE-task-slug"
-
-# Paths the SEPARATE verifier reads out of the agent's final container. Declare the
-# whole project directory when the verifier needs to rebuild or re-run the agent's
-# own sources, not just inspect an output file.
-artifacts = ["/app/"]
+# The one path the separate verifier collects from the agent's final container. A top-level
+# key on purpose: Harbor ignores an artifacts list placed under [verifier].
+artifacts = [
+    "/app/flowkit/src/",
+]
 
 [metadata]
-author_name = "REPLACE"
-author_email = "REPLACE"
+author_name = "anonymous"
+author_email = "anonymous"
+category = "Security"
+subcategory = "Forensics"
+tags = ["zig", "netflow", "incident-response", "clock-skew", "tcp"]
+languages = ["zig"]
+difficulty = "core"
+expert_time_estimate_hours = 5
+is_multi_container = true
+difficulty_explanation = """
+The agent writes a Zig tool that reconstructs a data theft incident from the flow records two routers exported to a collector, and the difficulty is that the two routers and the collector each tell the story slightly wrong in a way the spec states as a fact and leaves the agent to work through. The edge router samples one packet in N and says so in its header, so its counts and times are of the sampled packets; the core router counts every packet but has never been on NTP, so its clock is a whole number of seconds away from true time; the core was power cycled once, so its boot counter and flow sequence restarted; the collector lost some export packets from each router, restarted once and re-sent the last minutes of its spool, so some export packets are in the archive twice with a later arrival time; and both routers' boot counters are 32-bit and wrap inside the archive. The three archives are synthetic: solution/generate_archive.py builds the traffic, the two flow caches, the export packet bytes and the expected report from a written rule book, so no real network's data is in the task.
 
-# category must be one of: Science, Software, ML, Operations, Security, Hardware, Media
-# subcategory is an open list — see the taxonomy for the conventional values.
-category = "REPLACE"
-subcategory = "REPLACE"
-tags = ["REPLACE", "3-to-6", "descriptive", "keywords"]
-languages = ["REPLACE"]
+The reconstruction is the work. On the shipped archive the core's clock is 667 seconds ahead, so grouping records on the raw clocks puts a connection's two routers minutes apart and gets 41 of the 42 report fields wrong; adding both routers' counts gets 35 wrong; keying the re-sent copies on the flow sequence collapses the post-reboot packets onto the earlier boot's, 38 wrong; resolving a re-sent copy by the later arrival and reading the clock per packet, 30 wrong; counting the copies again, 32; leaving the sampled counts unscaled or ignoring the edge router altogether, 27, since only it saw the traffic during the outage; cutting connections on the routers' 15 second inactive timeout instead of the site's five minute port reuse, 32; counting a connection by any overlap with the window, 6; taking the collector's arrival stamp as the record time, 6; subtracting the boot counter without wrapping, 3; and the five-minute boundary, the window's end, the boot split and the flows before the first packet, one or two each. Every misreading measured on eight fresh seeds of each archive still gets at least one field wrong on every seed of the archives that carry its case, and the held-back archive has a different network, window, names, one packet in eight and a clock 1420 seconds behind.
 
-# One of: base, core, advanced, frontier — set from measured pass rates, not by feel.
-difficulty = "REPLACE"
-expert_time_estimate_hours = 0  # REPLACE with a real best-case estimate for a domain expert
-
-difficulty_explanation = """\
-REPLACE. What specifically defeats a strong agent here? Name the concrete traps and \
-why partial progress still fails. A reviewer who does not know your domain should \
-finish this paragraph understanding the shape of the difficulty.\
+Each fact is simple alone, and none is hard to implement once seen. What makes an expert slow here is that they interact: the clock error decides which records are one connection, the connection decides which router's count stands, the sampling decides whether a count is scaled, the re-sent copies decide which arrival gives the clock error, and the power cycle decides how the lost records are counted, so a report can look entirely plausible, agree with every self-check the agent can run against the archive on the box, and still be wrong on the archive it cannot see. It is the job of the analyst who owns network forensics at a site with more than one flow exporter: knowing why two exporters disagree before adding their numbers up, and being able to say why.
 """
-
-solution_explanation = """\
-REPLACE. The reference approach at a level someone could follow without reading \
-solve.sh — what has to be discovered, in what order, and what the key insight is.\
+solution_explanation = """
+The reference (solution/solve.sh) installs src/main.zig and builds it with the same compile command the grader uses. The tool connects with the standard library's TCP client to the host name or address in ARCHIVE_HOST, asks for the case, and follows the page tokens the archive hands out until it answers end, keeping every export packet once by its bytes with the earliest arrival time, since a re-sent copy is the same bytes arriving later. Each router's clock error is read as arrival minus header on those earliest copies, rounded to whole seconds, and the median taken, which is the one value they all give. The router's packets are ordered by its own clock and split into boots where the flow sequence restarts, and within each boot the sequence gaps between consecutive packets are summed into the lost count. Every record is put on the true clock as the header's clock, less the clock error, less the 32-bit wrapping distance from the header's boot counter to the record's First and Last. Records are sorted by flow key and start and walked into connections, a new one whenever the next record of the same flow key starts five minutes or more after the latest end so far; a connection's bytes are the core's byte counts summed when the core has any record of it and otherwise N times the edge router's. Connections whose start falls in the window are then counted into the two tables, outbound per inside source host with an outside destination and lateral per inside destination the suspect connected to, with the earliest start as the first contact, and the report is written as one line with integers throughout. Its output equals the rule book's report on all three archives. The rule book itself is Python, in solution/generate_archive.py, written before the Zig and independently of it; calibrate.py runs that rule book with one reading at a time switched to a plausible wrong one and counts the fields that move.
 """
+verification_explanation = """
+There are twenty-three checks over three graded runs. What each run has to produce is a golden report that the rule book in solution/generate_archive.py wrote in advance; it lives only in the verifier image, nothing recomputes it at grading time, and nothing about it comes from a path the agent can write.
 
-verification_explanation = """\
-REPLACE. What the verifier grades, how it grades it, and why passing it is only \
-possible by actually doing the work. Call out each independent axis of failure.\
+The tool is built by the verifier itself before each of the three runs, from a root-owned pristine copy of the collected sources with the output directory and the compiler's caches emptied and the sources stamped, as the unprivileged build user. What is compiled is Zig and nothing else, by construction rather than by inspection: every path under src that is not a .zig file is deleted, and the compiler is given main.zig as the root with no other flag and no libc, so a build.zig, an object or archive, an embedded data file or a source in another language left beside the sources never reaches it. The build is bounded by the 900 seconds the spec states, the binary has to be a regular file the build produced, and it is started from /app/flowkit with ARCHIVE_HOST and ARCHIVE_PORT set to an address and port the agent's own environment never used, while every other program on the box loses its group and other execute bits; the binary is static and owned by the build user, so nothing else stays executable. build.sh and run.sh are never consulted, and each run is bounded by the 600 seconds the spec states.
+
+The archive the graded runs talk to is started by the verifier from the copy in its own image, against archives that exist only there, with a page size and a token style that differ from the environment's. The first run is the shipped archive on 127.0.0.2, thirty-seven packets to a page and hexadecimal tokens, so a tool that ignores the host variable or the page size cannot pass. The second is an archive the agent has never seen: another network, another window, other exporter names, one packet in eight and a core clock 1420 seconds behind, so a report with the shipped archive's figures written into it fails before a row is compared. The third is a small archive reached by a host name the verifier puts in its hosts file, with the edge router sampling one packet in one, no power cycle, no re-sent packets and the suspect's only inside connections outside the window, one of them where the core's raw clock would put it inside. Each run's standard output is kept whole and must be exactly one line; the report is parsed and every outbound row, every lateral row with its first contact time, and both lost counts are compared to the golden with exact equality, integers only, ordering and uniqueness checked as the spec states them. The archive's own log is read to require that every run asked for the case and fetched every page through to the last, and that the edge run reached the archive listening on the address its name resolves to.
+
+Coverage is counted from the archives rather than assumed. One check per archive parses the packets and requires the edge router's headers to say sampled and the core's not, the clock error read off arrival minus header to be zero on the edge router and the stated whole seconds on the core, re-sent copies and a boot restart whose restarted sequence collides with the earlier boot's where the archive has them and none where it does not, records whose boot counter wrapped, a stretch of the window where only the edge router exported, two core records of one flow key exactly five minutes apart, and a core record starting exactly at each window edge on the true clock; and it requires the goldens to carry lateral rows and positive lost counts where the archive has them and the empty array and a zero where it does not.
+
+Fourteen arms were run against this verifier's checks, each the reference with exactly one reading changed and guarded by a count of the marker the edit leaves, so an edit that did not apply reports the arm invalid rather than passing: raw clocks, duplicates keyed on the flow sequence, the later copy kept with the clock read per packet, both routers' counts added, sampled counts unscaled, the sampled router ignored, connections cut at fifteen seconds, the boot counter subtracted without wrapping, boots not separated, only the first page read, the local address written in, the shipped report printed as a constant, and a data file embedded from beside the sources. All score 0: on the report comparison, on the archive's log for the unpaged and frozen ones, on the run itself for the fixed address, and on the build for the embedded file, which no longer compiles once the sweep has removed it. solution/calibrate.py measures the nineteen readings the rule book itself can express on the three shipped archives and eight fresh seeds of each, and every one differs on every seed of the archives that carry its case.
+
+Because the agent's code is compiled and executed inside the same container as the goldens, both steps run as an unprivileged user (setpriv, groups cleared, no new privileges) in a session of their own whose process group is killed afterwards. Before any of that starts, /tests, the archives, the service and /logs/verifier are made unreadable to that user and the verifier probes that they are; if one is still reachable the run ends with reward 0 instead of a grade. Root's PATH entries are checked to be root-owned and not writable by others, pytest is invoked by absolute path with -P, and the tests open every file with O_NOFOLLOW. Running solution/generate_archive.py --write on a clean tree reproduces the three archives, the three goldens, the case files and the environment copy byte for byte.
 """
-
-# NOTE: this one is a claim about you, not about the task. Rewrite it to match your
-# actual background before submitting; generic statements fail review.
-relevant_experience = """\
-REPLACE. The professional experience that qualifies you to set the difficulty and \
-correctness bar for this task.\
+relevant_experience = """
+I have done network forensics for a site that exported flow records from more than one router into one collector, and every incident write-up started with the same three questions this task turns on: which exporter's clock is right, which one is sampled, and whether the collector's archive holds each export packet once. The core switch that was never put on NTP, the edge box that sampled one packet in a few, the collector that replayed its spool after a restart and the boot counter that wrapped mid-investigation are all things I have had to explain in a report before anyone would believe a byte count. I have had several tasks accepted in this collection, and what I keep from them is a working rule: a stated fact is only tested once an archive exists on which that fact alone, misread, changes the graded answer, which is why every fact in this spec is planted in the data and counted by the tests instead of assumed.
 """
-
-# Network policy is set per phase. [environment] is the baseline and MUST be
-# "public" so the image build can install dependencies — the harnesses require it.
-# [agent] and [verifier] are the author's choice: either "public" or "no-network".
-# Those two values are the only permitted ones. Set all three phases explicitly
-# rather than relying on inheritance from the baseline.
 
 [verifier]
-timeout_sec = 600
-network_mode = "no-network"
-# "separate" is required: the verifier runs in its own container built from
-# tests/Dockerfile, after the agent's container is torn down. Tests and oracle data
-# are therefore never visible to the agent.
+timeout_sec = 3600
 environment_mode = "separate"
+network_mode = "public"
 
 [agent]
-timeout_sec = 3600
-# "no-network" if the task is meant to be solved offline; "public" if it genuinely
-# needs internet access. REPLACE to match your task.
-network_mode = "no-network"
+timeout_sec = 5400
+network_mode = "public"
 
 [environment]
 network_mode = "public"
-build_timeout_sec = 600
+build_timeout_sec = 900
 cpus = 2
-memory_mb = 8192
+memory_mb = 4096
 storage_mb = 10240
