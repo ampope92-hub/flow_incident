@@ -11,8 +11,8 @@ holds the host name or address it listens on and `ARCHIVE_PORT` the port. Both a
 container, and a different deployment sets them differently.
 
 The archive speaks a line protocol over TCP. Every command is one line ending in a newline;
-every answer starts with one line. It is read only, serves several connections at once and
-sets no limit on how many requests a connection makes.
+every answer starts with one line. Reads are all it does, several connections can be live
+together, and a connection may make as many requests as it likes.
 
     CASE
     FETCH
@@ -165,7 +165,7 @@ beside the sources is gone before the compiler runs, and it compiles with
     zig build-exe /app/flowkit/src/main.zig -O ReleaseSafe -femit-bin=<its own path>
 
 with no other flag and no libc, then starts the result from `/app/flowkit` with the two
-environment variables set. While the tool runs nothing else on the box can be executed, so
-the report has to come out of the Zig. The build is given 900 seconds and each graded run 600
-seconds. `/app/flowkit/build.sh` runs the same compile and `/app/flowkit/run.sh` builds and
-runs it against the archive here; the grader uses neither.
+environment variables set. Every figure in the report is the Zig's own work, because for the
+length of a run nothing on the box but the tool can execute. The build is given 900 seconds
+and each graded run 600 seconds. `/app/flowkit/build.sh` runs the same compile and
+`/app/flowkit/run.sh` builds and runs it against the archive here; the grader uses neither.
