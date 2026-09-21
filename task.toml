@@ -1,0 +1,77 @@
+# TB3.0 task manifest.
+#
+# Every field below is required unless marked optional. The four prose fields
+# (difficulty/solution/verification/relevant_experience) are what a reviewer reads
+# first — write them last, once the task actually works, and write them honestly.
+
+name = "REPLACE-task-slug"
+
+# Paths the SEPARATE verifier reads out of the agent's final container. Declare the
+# whole project directory when the verifier needs to rebuild or re-run the agent's
+# own sources, not just inspect an output file.
+artifacts = ["/app/"]
+
+[metadata]
+author_name = "REPLACE"
+author_email = "REPLACE"
+
+# category must be one of: Science, Software, ML, Operations, Security, Hardware, Media
+# subcategory is an open list — see the taxonomy for the conventional values.
+category = "REPLACE"
+subcategory = "REPLACE"
+tags = ["REPLACE", "3-to-6", "descriptive", "keywords"]
+languages = ["REPLACE"]
+
+# One of: base, core, advanced, frontier — set from measured pass rates, not by feel.
+difficulty = "REPLACE"
+expert_time_estimate_hours = 0  # REPLACE with a real best-case estimate for a domain expert
+
+difficulty_explanation = """\
+REPLACE. What specifically defeats a strong agent here? Name the concrete traps and \
+why partial progress still fails. A reviewer who does not know your domain should \
+finish this paragraph understanding the shape of the difficulty.\
+"""
+
+solution_explanation = """\
+REPLACE. The reference approach at a level someone could follow without reading \
+solve.sh — what has to be discovered, in what order, and what the key insight is.\
+"""
+
+verification_explanation = """\
+REPLACE. What the verifier grades, how it grades it, and why passing it is only \
+possible by actually doing the work. Call out each independent axis of failure.\
+"""
+
+# NOTE: this one is a claim about you, not about the task. Rewrite it to match your
+# actual background before submitting; generic statements fail review.
+relevant_experience = """\
+REPLACE. The professional experience that qualifies you to set the difficulty and \
+correctness bar for this task.\
+"""
+
+# Network policy is set per phase. [environment] is the baseline and MUST be
+# "public" so the image build can install dependencies — the harnesses require it.
+# [agent] and [verifier] are the author's choice: either "public" or "no-network".
+# Those two values are the only permitted ones. Set all three phases explicitly
+# rather than relying on inheritance from the baseline.
+
+[verifier]
+timeout_sec = 600
+network_mode = "no-network"
+# "separate" is required: the verifier runs in its own container built from
+# tests/Dockerfile, after the agent's container is torn down. Tests and oracle data
+# are therefore never visible to the agent.
+environment_mode = "separate"
+
+[agent]
+timeout_sec = 3600
+# "no-network" if the task is meant to be solved offline; "public" if it genuinely
+# needs internet access. REPLACE to match your task.
+network_mode = "no-network"
+
+[environment]
+network_mode = "public"
+build_timeout_sec = 600
+cpus = 2
+memory_mb = 8192
+storage_mb = 10240
