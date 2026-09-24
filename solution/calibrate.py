@@ -36,6 +36,7 @@ ROUTES = {
     "window_any": ({"window_any"}, "a connection counted when any of it overlaps the window"),
     "window_end_inclusive": ({"window_end_inclusive"}, "a connection starting exactly at the window's end counted"),
     "no_boot_split": ({"no_boot_split"}, "lost flows counted across the power cycle as one sequence"),
+    "seq_decrease_only": ({"seq_decrease_only"}, "a boot taken to end only where the flow sequence falls"),
     "lost_from_zero": ({"lost_from_zero"}, "flows before the first archived datagram counted as lost"),
     "secs_only": ({"secs_only"}, "the header's nanoseconds ignored"),
     "last_as_start": ({"last_as_start"}, "a record's Last taken as its start"),

@@ -242,7 +242,7 @@ printf '%s\n' "$ARCHIVE_BY_NAME" > /opt/run/named_host.txt
 as_runner bash -c 'kill -9 -1' 2>/dev/null || true
 echo "=== what the archive recorded ==="
 for s in sample hidden edge; do
-  echo "$s: $(/usr/bin/grep -c ' FETCH page ' /opt/run/archive_$s.log) pages served, $(/usr/bin/grep -c ' CASE' /opt/run/archive_$s.log) case lines, $(/usr/bin/grep -c 'bad-token\|unknown' /opt/run/archive_$s.log) refused"
+  echo "$s: $(/usr/bin/grep -c ' FETCH page ' /opt/run/archive_$s.log) pages served, $(/usr/bin/grep -c ' CASE' /opt/run/archive_$s.log) case lines, $(/usr/bin/grep -c 'refused\|unknown' /opt/run/archive_$s.log) refused"
 done
 /usr/bin/head -6 /opt/run/archive_sample.log
 

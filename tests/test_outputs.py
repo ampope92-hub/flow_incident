@@ -1,10 +1,7 @@
-"""Grades the case report. test.sh has already rebuilt the agent's Zig from the collected
-sources three times and run the tool against the archive on three sets: the archive the
-agent's own environment serves, a held-back archive with another network, window, sampling
-rate and clock error, and a small archive with no lateral movement reached by host name. Each
-run's standard output was captured to /opt/run; the report each set must produce was written
-by the rule book in solution/generate_archive.py and shipped as a golden in this image.
-Nothing here recomputes the report; every value is compared to the golden."""
+"""Grades the case report. test.sh rebuilt the agent's Zig three times and ran it against the
+shipped archive, a held-back one and a small one reached by host name, capturing stdout to
+/opt/run. Nothing here recomputes the report; every value is compared with the golden the rule
+book in solution/generate_archive.py wrote."""
 import ipaddress
 import json
 import os
@@ -201,7 +198,7 @@ def test_hidden_lost():
 
 def test_edge_outbound():
     """On the small archive, reached by host name, with the edge router sampling one packet in
-    one and no power cycle, every outbound row equals the rule book's."""
+    one, every outbound row equals the rule book's."""
     _outbound("edge")
 
 
@@ -213,7 +210,7 @@ def test_edge_lateral():
 
 
 def test_edge_lost():
-    """On the small archive the edge router lost nothing and the core lost some, and the report says so."""
+    """On the small archive both lost counts equal the rule book's; only the uptime marks the core's boot."""
     _lost("edge")
 
 
@@ -221,16 +218,17 @@ def test_edge_lost():
 
 @pytest.mark.parametrize("name", SETS)
 def test_each_run_read_the_whole_archive_it_was_given(name):
-    """The archive the verifier started for the run logged the case being asked for and every
-    page being fetched through to the last, so the report came over the protocol from the
-    address and port in the environment, following the tokens that archive handed out."""
+    """The run's archive logged the case being asked for and every page being fetched, each
+    FETCH after the first presenting a token that archive had already handed out (its tokens
+    are random, so none can be made up)."""
     log = read_bytes(os.path.join(RUN, f"archive_{name}.log")).decode("utf-8", "replace")
     assert " CASE" in log, "the run never asked for the case"
-    pages = set()
-    total = None
-    for m in re.finditer(r" FETCH page (\d+) of (\d+) ", log):
-        pages.add(int(m.group(1)))
-        total = int(m.group(2))
+    pages, total, handed = set(), None, {"-"}
+    for m in re.finditer(r" FETCH (\w+)(?: (\d+) of (\d+))? .*?token=(\S+) next=(\S+)", log):
+        assert m.group(1) == "page" and m.group(4) in handed, f"FETCH {m.group(4)!r} is not a token this archive handed out"
+        handed.add(m.group(5))
+        pages.add(int(m.group(2)))
+        total = int(m.group(3))
     assert total, "the run never fetched a page"
     missing = sorted(set(range(1, total + 1)) - pages)
     assert not missing, f"pages never fetched: {missing[:10]} of {total}"
@@ -259,6 +257,7 @@ def _cases(name):
     wrapped = sum(1 for (e, d) in dist for r in records(d) if r["first"] > header(d)["uptime"])
     core = sorted((header(d)["clock"], header(d)["seq"], header(d)["count"], d) for (e, d) in dist if e == core_name)
     restarts = sum(1 for i in range(1, len(core)) if core[i][1] < core[i - 1][1])
+    boots = len({(h["clock"] - h["uptime"]) % 2**32 // 1000 for h in (header(d) for *_, d in core)})
     seqs = {}
     for _, seq, _, d in core:
         seqs.setdefault(seq, []).append(d)
@@ -287,7 +286,7 @@ def _cases(name):
         for i in range(1, len(lst)):
             if lst[i][0] - max(t for _, t in lst[:i]) == 300_000:
                 exact_five += 1
-    return {"modes": modes, "ns": ns, "dup": dup, "wrapped": wrapped, "restarts": restarts, "collisions": collisions,
+    return {"modes": modes, "ns": ns, "dup": dup, "wrapped": wrapped, "restarts": restarts, "collisions": collisions, "boots": boots,
                 "longest_core_gap": longest_core_gap, "starts": starts, "exact_five": exact_five, "off": off, "case": case}
 
 
@@ -301,7 +300,7 @@ def test_sample_carries_every_case():
     assert c["modes"][c["case"]["exporters"][0]] == {1} and c["modes"][c["case"]["exporters"][1]] == {0}
     assert c["ns"] == {4}
     assert c["off"][c["case"]["exporters"][0]] == 0 and c["off"][c["case"]["exporters"][1]] == 667
-    assert c["dup"] >= 20 and c["restarts"] == 1 and c["collisions"] >= 10
+    assert c["dup"] >= 20 and c["restarts"] == 1 and c["boots"] == 2 and c["collisions"] >= 10
     assert c["wrapped"] >= 3 and c["longest_core_gap"] >= 300_000
     assert c["exact_five"] >= 1 and c["starts"]["from"] >= 1 and c["starts"]["to"] >= 1
     assert golden("sample")["lateral"] and all(v > 0 for v in golden("sample")["lost"].values())
@@ -314,21 +313,21 @@ def test_hidden_carries_every_case():
     assert c["modes"][c["case"]["exporters"][0]] == {1} and c["modes"][c["case"]["exporters"][1]] == {0}
     assert c["ns"] == {8}
     assert c["off"][c["case"]["exporters"][0]] == 0 and c["off"][c["case"]["exporters"][1]] == -1420
-    assert c["dup"] >= 20 and c["restarts"] == 1 and c["collisions"] >= 10
+    assert c["dup"] >= 20 and c["restarts"] == 1 and c["boots"] == 2 and c["collisions"] >= 10
     assert c["wrapped"] >= 3 and c["longest_core_gap"] >= 300_000
     assert c["exact_five"] >= 1 and c["starts"]["from"] >= 1 and c["starts"]["to"] >= 1
     assert golden("hidden")["lateral"] and all(v > 0 for v in golden("hidden")["lost"].values())
 
 
 def test_edge_carries_its_cases():
-    """The small archive samples one packet in one, has no power cycle and no re-sent
-    datagrams, a core clock just over five minutes ahead, a wrapped uptime counter on the
-    core, nothing lost from the edge router, and the window edges and five-minute cases."""
+    """The small archive samples one packet in one, has no re-sent datagrams, a core clock five
+    minutes ahead, a power cycle whose restarted sequence never falls below the old boot's, a
+    wrapped counter on the edge router, which lost nothing, and the window-edge and five-minute cases."""
     c = _cases("edge")
     assert c["modes"][c["case"]["exporters"][0]] == {1} and c["modes"][c["case"]["exporters"][1]] == {0}
     assert c["ns"] == {1}
     assert c["off"][c["case"]["exporters"][0]] == 0 and c["off"][c["case"]["exporters"][1]] == 301
-    assert c["dup"] == 0 and c["restarts"] == 0 and c["collisions"] == 0
+    assert c["dup"] == 0 and c["restarts"] == 0 and c["boots"] == 2 and c["collisions"] == 0
     assert c["wrapped"] >= 3
     assert c["exact_five"] >= 1 and c["starts"]["from"] >= 1 and c["starts"]["to"] >= 1
     lost = golden("edge")["lost"]

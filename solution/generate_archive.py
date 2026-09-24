@@ -19,6 +19,7 @@ with one reading changed at a time to measure how far each misreading lands from
 """
 import argparse
 import ipaddress
+import itertools
 import json
 import os
 import random
@@ -48,7 +49,7 @@ SETS = {
         "seed": 20260611, "inside": "172.22.0.0/16", "suspect": "172.22.40.9", "server_net": "172.22.8.",
         "ws_nets": ["172.22.40.", "172.22.41.", "172.22.42.", "172.22.44.", "172.22.45.", "172.22.46."],
         "exporters": ("edge-fw", "dist-1"), "start": 1749650400000, "hours": 3.0, "lead_min": 15,
-        "n_pkt": 8, "offset_s": -1420, "ws_count": 52, "internet_per_ws": (12, 36), "inside_per_ws": (2, 9),
+        "n_pkt": 8, "offset_s": -1420, "ws_count": 130, "internet_per_ws": (12, 36), "inside_per_ws": (2, 9),
         "exfil_ips": ["198.51.100.77", "198.51.100.140", "203.0.113.9"], "exfil_ports": [443, 8443, 4444],
         "border_uptime_ms": 4_294_967_296 - 6_400_000, "core_uptime_ms": 18_144_000, "border_seq0": 44_910_002, "core_seq0": 905,
         "reboot_at": 0.57, "reboot_down_s": 610, "core_loss": (0.23, 170), "border_loss": (0.80, 240),
@@ -60,8 +61,8 @@ SETS = {
         "exporters": ("gw", "sw"), "start": 1751713200000, "hours": 0.4, "lead_min": 8,
         "n_pkt": 1, "offset_s": 301, "ws_count": 9, "internet_per_ws": (4, 12), "inside_per_ws": (1, 3),
         "exfil_ips": ["203.0.113.200"], "exfil_ports": [443],
-        "border_uptime_ms": 267_840_000, "core_uptime_ms": 4_294_967_296 - 720_000, "border_seq0": 77_310, "core_seq0": 5_120_331,
-        "reboot_at": None, "reboot_down_s": 0, "core_loss": (0.55, 40), "border_loss": None,
+        "border_uptime_ms": 4_294_967_296 - 720_000, "core_uptime_ms": 1_500_000, "border_seq0": 77_310, "core_seq0": 20,
+        "reboot_at": -0.25, "reboot_down_s": 45, "boot_loss_s": 200, "core_loss": (0.55, 40), "border_loss": None,
         "replay_back_min": 0, "replay_after_s": 0, "no_lateral": True,
     },
 }
@@ -397,21 +398,21 @@ def simulate(cfg, seed):
         a = t_from + int(frac * (t_to - t_from))
         return (a, a + secs * 1000)
 
-    lost_core = span(*cfg["core_loss"])
-    lost_border = span(*cfg["border_loss"]) if cfg["border_loss"] else None
-    cuts_c = lost_core
-    cuts_b = lost_border or ()
+    lost_core = [span(*cfg["core_loss"])] + ([(down[1], down[1] + cfg["boot_loss_s"] * 1000)] if cfg.get("boot_loss_s") else [])
+    lost_border = [span(*cfg["border_loss"])] if cfg["border_loss"] else []
+    cuts_c = tuple(x for sp in lost_core for x in sp)
+    cuts_b = tuple(x for sp in lost_border for x in sp)
 
     def pack_core(conns):
         if down:
             r1 = export(core, conns, lambda c: c.last() < down[0], rng)
             r2 = export(core, conns, lambda c: c.first() >= down[1], rng)
-            return build_datagrams(core, r1, core.boot, core.seq, rng, cuts_c) + \
-                build_datagrams(core, r2, down[1] - 30_000, 0, rng, cuts_c)
-        return build_datagrams(core, export(core, conns, lambda c: True, rng), core.boot, core.seq, rng, cuts_c)
+            return [d + (0,) for d in build_datagrams(core, r1, core.boot, core.seq, rng, cuts_c)] + \
+                [d + (1,) for d in build_datagrams(core, r2, down[1] - 30_000, 0, rng, cuts_c)]
+        return [d + (0,) for d in build_datagrams(core, export(core, conns, lambda c: True, rng), core.boot, core.seq, rng, cuts_c)]
 
-    def in_span(dg, sp):
-        return sp is not None and sp[0] <= dg[3] < sp[1]
+    def in_span(dg, sps):
+        return any(sp[0] <= dg[3] < sp[1] for sp in sps)
 
     # datagrams the collector never received: a span of the core's and a span of the border's.
     # A connection with a record in a dropped core datagram and another in a kept one would be
@@ -432,15 +433,15 @@ def simulate(cfg, seed):
     else:
         raise SystemExit("could not settle the dropped span")
     border_recs = export(border, conns, crosses, rng)
-    b_dg = build_datagrams(border, border_recs, border.boot, border.seq, rng, cuts_b)
+    b_dg = [d + (0,) for d in build_datagrams(border, border_recs, border.boot, border.seq, rng, cuts_b)]
     dropped_core = {i for i, dg in enumerate(c_dg) if in_span(dg, lost_core)}
     dropped_border = {i for i, dg in enumerate(b_dg) if in_span(dg, lost_border)}
 
     items = []   # (received_ms, exporter, bytes, note)
-    for i, (at, rx, data, _) in enumerate(b_dg):
+    for i, (at, rx, data, *_) in enumerate(b_dg):
         if i not in dropped_border:
             items.append((rx, bname, data, "orig"))
-    for i, (at, rx, data, _) in enumerate(c_dg):
+    for i, (at, rx, data, *_) in enumerate(c_dg):
         if i not in dropped_core:
             items.append((rx, cname, data, "orig"))
     items.sort(key=lambda it: (it[0], it[1]))
@@ -458,10 +459,19 @@ def simulate(cfg, seed):
 
     truth = {"conns": conns, "down": down, "lost_core": lost_core, "dropped_core": len(dropped_core),
                  "dropped_border": len(dropped_border), "c_dg": c_dg, "b_dg": b_dg,
-                 "lost_core_flows": sum(HDR.unpack_from(c_dg[i][2])[1] for i in dropped_core),
-                 "lost_border_flows": sum(HDR.unpack_from(b_dg[i][2])[1] for i in dropped_border)}
+                 "lost_core_flows": planted_lost(c_dg, dropped_core), "lost_border_flows": planted_lost(b_dg, dropped_border)}
     case = {"inside": cfg["inside"], "suspect": cfg["suspect"], "frm": t_from, "to": t_to, "exporters": list(cfg["exporters"])}
     return items, case, truth
+
+
+def planted_lost(dgs, dropped):
+    """Records in the dropped datagrams that lie between two kept ones of the same boot; a
+    boot's datagrams are in sequence order, and those before its first kept one are not lost."""
+    kept = defaultdict(list)
+    for i, d in enumerate(dgs):
+        if i not in dropped:
+            kept[d[4]].append(i)
+    return sum(HDR.unpack_from(dgs[i][2])[1] for i in dropped if kept[dgs[i][4]] and kept[dgs[i][4]][0] < i < kept[dgs[i][4]][-1])
 
 
 def record_keys(data):
@@ -521,7 +531,11 @@ def rulebook(items, case, mis=None, want_conns=False):
         hs.sort()
         boots = [[]]
         for i, h in enumerate(hs):
-            if i and h[2] < hs[i - 1][2] and "no_boot_split" not in mis:
+            # clock less uptime is the boot instant (the counter is 32-bit), one value per boot
+            moved = abs((h[0] - h[1] - hs[i - 1][0] + hs[i - 1][1] + 2**31) % 2**32 - 2**31) > 1000
+            if "seq_decrease_only" in mis:
+                moved = h[2] < hs[i - 1][2]
+            if i and moved and "no_boot_split" not in mis:
                 boots.append([])
             boots[-1].append(h)
         total = 0
@@ -659,6 +673,11 @@ def coverage(items, case, truth, cfg):
             h = HDR.unpack_from(data)
             seqs[h[5]].append(h[2])
     collide = sum(1 for v in seqs.values() if len(v) > 1)
+    # boot boundaries on the core where the restarted sequence neither falls nor carries straight on
+    hs = sorted((h[3] * 1000 + h[4] // 1_000_000, h[2], h[5], h[1]) for (name, data) in distinct if name == cname
+                for h in [HDR.unpack_from(data)])
+    rise = sum(1 for a, b in itertools.pairwise(hs) if abs((b[0] - b[1] - a[0] + a[1] + 2**31) % 2**32 - 2**31) > 1000
+               and b[2] > a[2] + a[3])
     replayed_post = 0
     if truth["down"]:
         for (name, data), notes in distinct.items():
@@ -690,7 +709,7 @@ def coverage(items, case, truth, cfg):
                 wrapped += 1
     return {
         "wrapped_records": wrapped,
-        "tags": dict(tags), "duplicate_datagrams": dup, "seq_collisions": collide, "replayed_post_reboot": replayed_post,
+        "tags": dict(tags), "duplicate_datagrams": dup, "seq_collisions": collide, "boot_seq_rise": rise, "replayed_post_reboot": replayed_post,
         "border_only_in_window": border_only, "sampled_split": split, "short_seen_by_both": short_both,
         "lost": rep["lost"], "lost_planted": {cfg["exporters"][0]: truth["lost_border_flows"], cfg["exporters"][1]: truth["lost_core_flows"]},
         "outbound_hosts": len(rep["outbound"]), "lateral_hosts": len(rep["lateral"]),
@@ -705,8 +724,9 @@ def rulebook_conns(items, case):
 
 REQUIRED = {
     "duplicate_datagrams": lambda v, cfg: v >= (20 if cfg["replay_back_min"] else 0),
-    "seq_collisions": lambda v, cfg: v >= (10 if cfg["reboot_at"] is not None else 0),
-    "border_only_in_window": lambda v, cfg: v >= (6 if cfg["reboot_at"] is not None else 2),
+    "seq_collisions": lambda v, cfg: v >= (10 if cfg["reboot_at"] is not None and "boot_loss_s" not in cfg else 0),
+    "boot_seq_rise": lambda v, cfg: v >= 1 if "boot_loss_s" in cfg else v == 0,
+    "border_only_in_window": lambda v, cfg: v >= (6 if cfg["reboot_at"] is not None and cfg["n_pkt"] > 1 else 2),
     "sampled_split": lambda v, cfg: v >= (1 if cfg["reboot_at"] is not None and cfg["n_pkt"] > 1 else 0),
     "short_seen_by_both": lambda v, cfg: v >= 20,
     "wrapped_records": lambda v, cfg: v >= 3,

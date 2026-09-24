@@ -121,7 +121,12 @@ fn header(d: []const u8) Hdr {
     };
 }
 
-const Boot = struct { clock: i64, seq: u32, count: u16 };
+const Boot = struct { clock: i64, up: u32, seq: u32, count: u16 };
+
+// The boot instant on the router's clock, modulo the 32-bit uptime counter.
+fn bootAt(b: Boot) u32 {
+    return @as(u32, @truncate(@as(u64, @bitCast(b.clock)))) -% b.up;
+}
 
 fn bootLess(_: void, a: Boot, b: Boot) bool {
     if (a.clock != b.clock) return a.clock < b.clock;
@@ -203,18 +208,18 @@ pub fn main() !void {
             if (d.exp != e) continue;
             const h = header(d.data);
             try vals.append(@divFloor(h.clock - d.rx + 500, 1000));
-            try boots.append(.{ .clock = h.clock, .seq = h.seq, .count = h.count });
+            try boots.append(.{ .clock = h.clock, .up = h.uptime, .seq = h.seq, .count = h.count });
         }
         if (vals.items.len == 0) continue;
         std.mem.sort(i64, vals.items, {}, std.sort.asc(i64));
         offset[e] = vals.items[vals.items.len / 2];
 
-        // boots: ordered by the router's clock, a boot ends where the sequence restarts
+        // boots: ordered by the router's clock, a boot ends where the uptime stops running with it
         std.mem.sort(Boot, boots.items, {}, bootLess);
         var lo: usize = 0;
         var i: usize = 1;
         while (i <= boots.items.len) : (i += 1) {
-            if (i == boots.items.len or boots.items[i].seq < boots.items[i - 1].seq) {
+            if (i == boots.items.len or @abs(@as(i32, @bitCast(bootAt(boots.items[i]) -% bootAt(boots.items[i - 1])))) > 1000) {
                 const b = boots.items[lo..i];
                 std.mem.sort(Boot, b, {}, seqLess);
                 var j: usize = 1;

@@ -12,6 +12,7 @@ raw, exactly as many as the line says.
 import argparse
 import base64
 import os
+import secrets
 import socketserver
 import struct
 import sys
@@ -46,30 +47,14 @@ class Archive:
         self.log = log
         self.lock = threading.Lock()
         self.pages = (len(items) + page - 1) // page
+        self.issued = {}
 
     def token(self, index):
-        if self.style == "hex":
-            return f"{index * 7919 + 13:x}"
-        if self.style == "b64":
-            raw = struct.pack(">I", index) + b"pg"
-            return base64.urlsafe_b64encode(raw).decode().rstrip("=")
-        return f"p{index}"
-
-    def parse(self, tok):
-        try:
-            if self.style == "hex":
-                v = int(tok, 16) - 13
-                return v // 7919 if v % 7919 == 0 and v >= 0 else None
-            if self.style == "b64":
-                raw = base64.urlsafe_b64decode(tok + "=" * (-len(tok) % 4))
-                if len(raw) != 6 or raw[4:] != b"pg":
-                    return None
-                return struct.unpack(">I", raw[:4])[0]
-            if tok.startswith("p"):
-                return int(tok[1:])
-        except (ValueError, TypeError):
-            return None
-        return None
+        """A fresh random token for the page at `index`; only a token handed out is accepted."""
+        tok = {"hex": secrets.token_hex(6), "b64": base64.urlsafe_b64encode(secrets.token_bytes(6)).decode()}.get(
+            self.style, f"p{secrets.randbelow(10**9)}")
+        self.issued[tok] = index
+        return tok
 
     def note(self, msg):
         with self.lock:
@@ -93,15 +78,16 @@ class Handler(socketserver.StreamRequestHandler):
                 a.note(f"{peer} CASE")
                 self.wfile.write((a.case + "\n").encode())
             elif cmd[0] == "FETCH" and len(cmd) <= 2:
-                idx = 0 if len(cmd) == 1 else a.parse(cmd[1])
-                if idx is None or idx > a.pages:
-                    a.note(f"{peer} FETCH bad-token {cmd[1] if len(cmd) > 1 else ''}")
+                tok = cmd[1] if len(cmd) > 1 else "-"
+                idx = 0 if len(cmd) == 1 else a.issued.get(tok)
+                if idx is None:
+                    a.note(f"{peer} FETCH refused token={tok} next=-")
                     self.wfile.write(b"ERR no such page\n")
                     continue
                 lo = idx * a.page
                 chunk = a.items[lo:lo + a.page]
                 nxt = a.token(idx + 1) if lo + a.page < len(a.items) else "end"
-                a.note(f"{peer} FETCH page {idx + 1} of {a.pages} ({len(chunk)} items) next={nxt}")
+                a.note(f"{peer} FETCH page {idx + 1} of {a.pages} ({len(chunk)} items) token={tok} next={nxt}")
                 out = bytearray(f"PAGE {len(chunk)} {nxt}\n".encode())
                 for name, rx, data in chunk:
                     out += f"ITEM {name} {rx} {len(data)}\n".encode()
