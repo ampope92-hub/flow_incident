@@ -53,7 +53,7 @@ SETS = {
         "exfil_ips": ["198.51.100.77", "198.51.100.140", "203.0.113.9"], "exfil_ports": [443, 8443, 4444],
         "border_uptime_ms": 4_294_967_296 - 6_400_000, "core_uptime_ms": 18_144_000, "border_seq0": 44_910_002, "core_seq0": 905,
         "reboot_at": 0.57, "reboot_down_s": 610, "core_loss": (0.23, 170), "border_loss": (0.80, 240),
-        "replay_back_min": 14, "replay_after_s": 240,
+        "replay_back_min": 14, "replay_after_s": 240, "first_tie": True,
     },
     "edge": {
         "seed": 20260705, "inside": "192.168.50.0/24", "suspect": "192.168.50.77", "server_net": "192.168.50.",
@@ -217,6 +217,9 @@ def gen_traffic(rng, cfg):
         else:
             add_tcp(suspect, servers[4], 3389, t_to + off // 2, 8_000, 20_000, 500, "lateral", "raw_in_true_out")
             add_tcp(suspect, servers[5], 3389, t_from - off // 2, 8_000, 20_000, 500, "lateral", "raw_out_true_in")
+        if cfg.get("first_tie"):  # .10 and .5 first contacted in one millisecond, .10 exported first
+            for k, dur in ((3, 2_000), (0, 9_000)):
+                add_tcp(suspect, servers[k], 445, t_from + 20_000, dur, 20_000, 500, "lateral", "first_tie")
     # a source port used twice, five minutes and more apart, and once exactly five minutes apart
     p = fresh_port(suspect)
     t0 = t_from + int(0.3 * (t_to - t_from))
@@ -713,6 +716,7 @@ def coverage(items, case, truth, cfg):
         "border_only_in_window": border_only, "sampled_split": split, "short_seen_by_both": short_both,
         "lost": rep["lost"], "lost_planted": {cfg["exporters"][0]: truth["lost_border_flows"], cfg["exporters"][1]: truth["lost_core_flows"]},
         "outbound_hosts": len(rep["outbound"]), "lateral_hosts": len(rep["lateral"]),
+        "lateral_first_ties": sum(a["first_ms"] == b["first_ms"] for a, b in itertools.pairwise(rep["lateral"])),
         "datagrams": len(items), "distinct": len(distinct), "connections": len(truth["conns"]),
     }
 
@@ -731,6 +735,7 @@ REQUIRED = {
     "short_seen_by_both": lambda v, cfg: v >= 20,
     "wrapped_records": lambda v, cfg: v >= 3,
     "lateral_hosts": lambda v, cfg: (v >= 4) if not cfg.get("no_lateral") else v == 0,
+    "lateral_first_ties": lambda v, cfg: v >= (1 if cfg.get("first_tie") else 0),
 }
 
 

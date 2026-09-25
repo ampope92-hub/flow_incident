@@ -206,7 +206,6 @@ def test_edge_lateral():
     """On the small archive the suspect's only inside connections lie outside the window, one of
     them where the core's raw clock would put it inside, so lateral is the empty array."""
     _lateral("edge")
-    assert report("edge")["lateral"] == []
 
 
 def test_edge_lost():
@@ -308,7 +307,8 @@ def test_sample_carries_every_case():
 
 def test_hidden_carries_every_case():
     """The held-back archive carries the same cases with other constants: one packet in eight,
-    a core clock behind true time, other names, network and window."""
+    a core clock behind true time, other names, network and window, and two lateral hosts
+    first contacted in the same millisecond, the higher address exported first."""
     c = _cases("hidden")
     assert c["modes"][c["case"]["exporters"][0]] == {1} and c["modes"][c["case"]["exporters"][1]] == {0}
     assert c["ns"] == {8}
@@ -316,7 +316,8 @@ def test_hidden_carries_every_case():
     assert c["dup"] >= 20 and c["restarts"] == 1 and c["boots"] == 2 and c["collisions"] >= 10
     assert c["wrapped"] >= 3 and c["longest_core_gap"] >= 300_000
     assert c["exact_five"] >= 1 and c["starts"]["from"] >= 1 and c["starts"]["to"] >= 1
-    assert golden("hidden")["lateral"] and all(v > 0 for v in golden("hidden")["lost"].values())
+    lat = golden("hidden")["lateral"]
+    assert len({r["first_ms"] for r in lat}) < len(lat) and all(v > 0 for v in golden("hidden")["lost"].values())
 
 
 def test_edge_carries_its_cases():
