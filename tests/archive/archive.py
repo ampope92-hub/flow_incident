@@ -51,7 +51,7 @@ class Archive:
 
     def token(self, index):
         """A fresh random token for the page at `index`; only a token handed out is accepted."""
-        tok = {"hex": secrets.token_hex(6), "b64": base64.urlsafe_b64encode(secrets.token_bytes(6)).decode()}.get(
+        tok = {"hex": secrets.token_hex(6), "b64": base64.urlsafe_b64encode(secrets.token_bytes(30)).decode()}.get(
             self.style, f"p{secrets.randbelow(10**9)}")
         self.issued[tok] = index
         return tok

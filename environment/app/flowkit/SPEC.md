@@ -44,7 +44,7 @@ archive does not know is answered `ERR` and a line of text; `QUIT` closes the co
 ## What a datagram holds
 
 Both routers export version 5 flow datagrams, the common layout, all fields big endian. The
-header is 24 bytes:
+header is 28 bytes:
 
     u16  version, always 5
     u16  count of records in this datagram, 1 to 30
