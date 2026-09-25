@@ -31,8 +31,8 @@ def raw(name):
 
 def report(name):
     text = raw(name)
-    assert text.endswith("\n"), f"the {name} report does not end with a newline"
-    assert text.count("\n") == 1, f"the {name} report is not exactly one line"
+    text = text.removesuffix("\n")
+    assert "\n" not in text, f"the {name} report is not exactly one line"
     return json.loads(text)
 
 

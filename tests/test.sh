@@ -228,7 +228,7 @@ stop_archive
 
 echo "=== an archive the agent has never seen ==="
 build_tool
-start_archive hidden 127.0.0.1 9612 91 b64 || { echo 0 > /logs/verifier/reward.txt; exit 0; }
+start_archive hidden 127.0.0.1 9612 257 b64 || { echo 0 > /logs/verifier/reward.txt; exit 0; }
 exec_tool 127.0.0.1 9612 /opt/run/report_hidden.json
 stop_archive
 

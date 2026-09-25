@@ -1,8 +1,6 @@
 # The flow archive and the case report
 
-Working notes for the flowkit tool. The first half is the archive service and the datagrams
-it holds, the second half is what we know about the two routers and the collector, and the
-last part is the report the SOC wants and how the tool is built.
+Working notes for the flowkit tool.
 
 ## Reaching the archive
 
@@ -25,7 +23,8 @@ together, and a connection may make as many requests as it likes.
 
 `inside` is the site's network, `suspect` the workstation the SOC flagged, `from` and `to` the
 incident window as milliseconds since the Unix epoch, UTC, and `exporters` the names of the
-two routers as the collector labelled them, the edge router first and the core second.
+two routers as the collector labelled them, the edge router first and the core second. The
+collector's config allows only letters, digits, dot, dash and underscore in a label.
 
 `FETCH` with no token answers the first page of datagrams, in the order the collector
 received them; `FETCH <token>` answers the page after the one that handed out that token.
