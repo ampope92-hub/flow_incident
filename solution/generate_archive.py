@@ -534,8 +534,9 @@ def rulebook(items, case, mis=None, want_conns=False):
         hs.sort()
         boots = [[]]
         for i, h in enumerate(hs):
-            # clock less uptime is the boot instant (the counter is 32-bit), one value per boot
-            moved = abs((h[0] - h[1] - hs[i - 1][0] + hs[i - 1][1] + 2**31) % 2**32 - 2**31) > 1000
+            # clock less uptime is the boot instant (the counter is 32-bit), one value per boot;
+            # the sequence never wraps (no router exported 2^32 flows), so a fall is a boot too
+            moved = abs((h[0] - h[1] - hs[i - 1][0] + hs[i - 1][1] + 2**31) % 2**32 - 2**31) > 1000 or h[2] < hs[i - 1][2]
             if "seq_decrease_only" in mis:
                 moved = h[2] < hs[i - 1][2]
             if i and moved and "no_boot_split" not in mis:
@@ -543,7 +544,6 @@ def rulebook(items, case, mis=None, want_conns=False):
             boots[-1].append(h)
         total = 0
         for b in boots:
-            b.sort(key=lambda h: h[2])
             if "lost_from_zero" in mis:
                 total += b[0][2]
             for i in range(1, len(b)):

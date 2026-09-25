@@ -1,7 +1,5 @@
 # The flow archive and the case report
 
-Working notes for the flowkit tool.
-
 ## Reaching the archive
 
 Two environment variables say where the archive is, and nothing else does: `ARCHIVE_HOST`
@@ -54,7 +52,7 @@ header is 24 bytes:
     u32  unix_secs and
     u32  unix_nsecs: the router's own clock at the moment of export
     u32  flow_sequence: how many flow records the router had exported before this datagram,
-         counted since it booted
+         counted since it booted; no router exported 2^32 flows in the life of this archive
     u8   engine_type, u8 engine_id
     u16  sampling: the top two bits are the mode, the low fourteen the interval N. Mode 0
          means every packet was counted. Mode 1 means the router counted one packet in N.
@@ -164,7 +162,7 @@ beside the sources is gone before the compiler runs, and it compiles with
     zig build-exe /app/flowkit/src/main.zig -O ReleaseSafe -femit-bin=<its own path>
 
 with no other flag and no libc, then starts the result from `/app/flowkit` with the two
-environment variables set. Every figure in the report is the Zig's own work, because for the
-length of a run nothing on the box but the tool can execute. The build is given 900 seconds
-and each graded run 600 seconds. `/app/flowkit/build.sh` runs the same compile and
+environment variables set. Every figure in the report is the Zig's own work: the tool is the
+only program that may be started. The build is given 900 seconds and each graded run 600
+seconds. `/app/flowkit/build.sh` runs the same compile and
 `/app/flowkit/run.sh` builds and runs it against the archive here; the grader uses neither.

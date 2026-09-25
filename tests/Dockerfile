@@ -4,6 +4,13 @@
 # runs the tool against an archive it starts, so the report has to come out of the agent's
 # own program talking the protocol.
 
+# The tool is started through tests/launch.c, which lets it start no other program. It is built
+# statically in a throwaway stage, so no C compiler reaches the final image.
+FROM public.ecr.aws/docker/library/python:3.13-slim-bookworm@sha256:01f42367a0a94ad4bc17111776fd66e3500c1d87c15bbd6055b7371d39c124fb AS launcher
+RUN apt-get update && apt-get install -y --no-install-recommends gcc libc6-dev && rm -rf /var/lib/apt/lists/*
+COPY launch.c /tmp/launch.c
+RUN gcc -O2 -static -Wall -o /tool_launch /tmp/launch.c
+
 FROM public.ecr.aws/docker/library/python:3.13-slim-bookworm@sha256:01f42367a0a94ad4bc17111776fd66e3500c1d87c15bbd6055b7371d39c124fb
 
 ENV LANG=C.UTF-8 \
@@ -17,6 +24,7 @@ RUN pip install --no-cache-dir --require-hashes --no-deps -r /tmp/zig-requiremen
 RUN pip install --no-cache-dir --require-hashes --no-deps -r /tmp/requirements.txt && rm -f /tmp/requirements.txt
 RUN /usr/local/lib/python3.13/site-packages/ziglang/zig version
 
+COPY --from=launcher /tool_launch /usr/local/bin/tool_launch
 RUN useradd --create-home --uid 10001 --shell /bin/bash runner
 
 # Landing directory for the declared artifact.

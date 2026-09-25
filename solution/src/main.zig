@@ -132,9 +132,6 @@ fn bootLess(_: void, a: Boot, b: Boot) bool {
     if (a.clock != b.clock) return a.clock < b.clock;
     return a.seq < b.seq;
 }
-fn seqLess(_: void, a: Boot, b: Boot) bool {
-    return a.seq < b.seq;
-}
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -215,13 +212,13 @@ pub fn main() !void {
         offset[e] = vals.items[vals.items.len / 2];
 
         // boots: ordered by the router's clock, a boot ends where the uptime stops running with it
+        // or the sequence falls (no router exported 2^32 flows, so a sequence never wraps)
         std.mem.sort(Boot, boots.items, {}, bootLess);
         var lo: usize = 0;
         var i: usize = 1;
         while (i <= boots.items.len) : (i += 1) {
-            if (i == boots.items.len or @abs(@as(i32, @bitCast(bootAt(boots.items[i]) -% bootAt(boots.items[i - 1])))) > 1000) {
+            if (i == boots.items.len or boots.items[i].seq < boots.items[i - 1].seq or @abs(@as(i32, @bitCast(bootAt(boots.items[i]) -% bootAt(boots.items[i - 1])))) > 1000) {
                 const b = boots.items[lo..i];
-                std.mem.sort(Boot, b, {}, seqLess);
                 var j: usize = 1;
                 while (j < b.len) : (j += 1) {
                     lost[e] += @as(i64, b[j].seq) - (@as(i64, b[j - 1].seq) + @as(i64, b[j - 1].count));

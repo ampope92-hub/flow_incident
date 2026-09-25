@@ -77,52 +77,13 @@ cp -a /app/flowkit /opt/src_pristine
 chown -R root:root /opt/src_pristine
 chmod -R go-w /opt/src_pristine
 
-# Every mount point that is a real filesystem: proc, sysfs, cgroup, devpts and mqueue hold
-# nothing a program can be started from.
-scratch_roots() {
-  local dev mnt fstype rest
-  while read -r dev mnt fstype rest; do
-    case "$fstype" in
-      proc|sysfs|cgroup|cgroup2|devpts|mqueue|securityfs|debugfs|tracefs|binfmt_misc|configfs|fusectl|pstore|bpf|hugetlbfs|autofs|nsfs|rpc_pipefs) continue ;;
-    esac
-    case "$mnt" in /proc|/proc/*|/sys|/sys/*) continue ;; esac
-    printf '%s\n' "$mnt"
-  done < /proc/mounts
-}
-
-# While the tool runs, nothing else on the box may be executed by the build user: every
-# regular file with a group or other execute bit, on every real mount, loses those bits. The
-# tool is a static binary the build user owns, so it keeps its own execute bit and needs no
-# loader. The modes are saved and put back afterwards, and by the EXIT trap if this script
-# dies in between, so log collection never finds a box with no usable shell.
-EXEC_SAVED=""
-close_exec() {
-  local roots left
-  roots="$(scratch_roots)"
-  EXEC_SAVED="$(echo "$roots" | /usr/bin/xargs -d '\n' -I{} /usr/bin/find {} -xdev -type f -perm /011 \
-                   -printf '%m %p\n' 2>/dev/null)"
-  echo "$EXEC_SAVED" | /usr/bin/cut -d' ' -f2- | /usr/bin/xargs -d '\n' -r /usr/bin/chmod go-x 2>/dev/null || true
-  left="$(echo "$roots" | /usr/bin/xargs -d '\n' -I{} /usr/bin/find {} -xdev -type f -perm /011 2>/dev/null)"
-  echo "programs closed to the build user while the tool runs: $(echo "$EXEC_SAVED" | /usr/bin/grep -c .) files lost their group and other execute bits;" \
-       "still executable by it: $(echo "$left" | /usr/bin/grep -c .)" $(echo "$left" | /usr/bin/tr '\n' ' ')
-}
-open_exec() {
-  local m
-  [ -n "${EXEC_SAVED:-}" ] || return 0
-  for m in $(echo "$EXEC_SAVED" | /usr/bin/cut -d' ' -f1 | /usr/bin/sort -u); do
-    echo "$EXEC_SAVED" | /usr/bin/awk -v m="$m" '$1 == m { print substr($0, length(m) + 2) }' \
-      | /usr/bin/xargs -d '\n' -r /usr/bin/chmod "$m" 2>/dev/null || true
-  done
-  EXEC_SAVED=""
-}
-
 # The interpreters on the box by real path, closed while the Zig compiles: the build has no
 # business running python or perl.
 INTERP="$(for t in python3 python3.13 pip perl awk mawk; do
             p="$(command -v "$t" 2>/dev/null)" && readlink -f "$p"; done | sort -u)"
 close_interp() { for f in $INTERP; do /usr/bin/chmod 750 "$f" 2>/dev/null || true; done; }
 open_interp()  { for f in $INTERP; do /usr/bin/chmod 755 "$f" 2>/dev/null || true; done; }
-trap 'open_exec; open_interp' EXIT
+trap 'open_interp' EXIT
 
 echo ok > /opt/run/build_check.txt
 
@@ -132,9 +93,8 @@ echo ok > /opt/run/build_check.txt
 # nothing else, by construction: every path under src that is not a .zig file is deleted, and
 # the compiler is given main.zig as the root with no other flag, so a build.zig, an object,
 # an archive or a source in another language left beside the sources never reaches it. The
-# binary has to be a regular file the build produced. Everything else under the tree then
-# loses its execute bits, so a helper compiled beforehand and committed beside the sources is
-# inert. The build is bounded by the 900 seconds the spec states.
+# binary has to be a regular file the build produced. The build is bounded by the 900 seconds
+# the spec states.
 build_tool() {
   local status
   /usr/bin/find /tmp -mindepth 1 -maxdepth 1 ! -name 'pytest_cache' -exec /usr/bin/rm -rf {} + 2>/dev/null || true
@@ -167,7 +127,6 @@ build_tool() {
     echo failed > /opt/run/build_check.txt
     /usr/bin/rm -f /app/flowkit/bin/flowkit
   fi
-  /usr/bin/find /app/flowkit -type f -perm /111 ! -samefile /app/flowkit/bin/flowkit -exec /usr/bin/chmod a-x {} + 2>/dev/null || true
 }
 
 SERVICE_PID=""
@@ -196,23 +155,21 @@ stop_archive() {
 }
 
 # $1 = host, $2 = port, $3 = where to capture stdout. Starts the binary the build produced,
-# from the directory the spec documents, as the unprivileged build user, with every other
-# program on the box closed to it for the seconds it runs. Each run is bounded by the wall
-# clock the spec states: a tool that never finishes would otherwise hang the verifier rather
-# than fail.
+# from the directory the spec documents, as the unprivileged build user, through tool_launch
+# (tests/launch.c), so neither it nor any child can start another program; its stderr goes to
+# this log. Each run is bounded by the wall clock the spec states: a tool that never finishes
+# would otherwise hang the verifier rather than fail.
 exec_tool() {
   local host="$1" port="$2" out="$3" pid
-  close_exec
   setsid /usr/bin/timeout --signal=KILL 600 bash -c '
       cd /app/flowkit
       export HOME=/home/runner
       export ARCHIVE_HOST="$1" ARCHIVE_PORT="$2"
-      exec setpriv --clear-groups --no-new-privs --reuid runner --regid runner /app/flowkit/bin/flowkit' \
+      exec setpriv --clear-groups --no-new-privs --reuid runner --regid runner /usr/local/bin/tool_launch /app/flowkit/bin/flowkit' \
       _ "$host" "$port" > "$out" &
   pid=$!
   wait "$pid"
   echo "run exit status: $? (archive $host:$port)"
-  open_exec
   kill -TERM -- -"$pid" 2>/dev/null || true
   kill -KILL -- -"$pid" 2>/dev/null || true
   as_runner bash -c 'kill -9 -1' 2>/dev/null || true
