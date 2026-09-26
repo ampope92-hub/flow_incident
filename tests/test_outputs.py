@@ -311,12 +311,12 @@ def test_sample_carries_every_case():
 
 
 def test_hidden_carries_every_case():
-    """The held-back archive carries the same cases with other constants: one packet in eight,
+    """The held-back archive carries the same cases with other constants: one packet in 260,
     a core clock behind true time, other names, network and window, and two lateral hosts
     first contacted in the same millisecond, the higher address exported first."""
     c = _cases("hidden")
     assert c["modes"][c["case"]["exporters"][0]] == {1} and c["modes"][c["case"]["exporters"][1]] == {0}
-    assert c["ns"] == {8}
+    assert c["ns"] == {260}
     assert c["off"][c["case"]["exporters"][0]] == 0 and c["off"][c["case"]["exporters"][1]] == -1420
     assert c["dup"] >= 20 and c["restarts"] == 1 and c["boots"] == 2 and c["collisions"] >= 10
     assert c["wrapped"] >= 3 and c["longest_core_gap"] >= 300_000

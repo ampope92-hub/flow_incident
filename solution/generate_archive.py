@@ -50,10 +50,10 @@ SETS = {
     "hidden": {
         "seed": 20260611, "inside": "172.22.0.0/16", "suspect": "172.22.40.9", "server_net": "172.22.8.",
         "ws_nets": ["172.22.40.", "172.22.41.", "172.22.42.", "172.22.44.", "172.22.45.", "172.22.46."],
-        "exporters": ("edge-fw", "dist-1"), "start": 1749650400000, "hours": 3.0, "lead_min": 15,
-        "n_pkt": 8, "offset_s": -1420, "ws_count": 130, "internet_per_ws": (12, 36), "inside_per_ws": (2, 9),
+        "exporters": ("edge-fw.v2", "dist_1"), "start": 1749650400000, "hours": 3.0, "lead_min": 15,
+        "n_pkt": 260, "offset_s": -1420, "ws_count": 185, "internet_per_ws": (12, 36), "inside_per_ws": (2, 9),
         "exfil_ips": ["198.51.100.77", "198.51.100.140", "203.0.113.9"], "exfil_ports": [443, 8443, 4444],
-        "border_uptime_ms": 4_294_967_296 - 6_400_000, "core_uptime_ms": 18_144_000, "border_seq0": 44_910_002, "core_seq0": 905,
+        "border_uptime_ms": 4_294_967_296 - 9_256_000, "core_uptime_ms": 18_144_000, "border_seq0": 44_910_002, "core_seq0": 905,
         "reboot_at": 0.57, "reboot_down_s": 610, "core_loss": (0.23, 170), "border_loss": (0.80, 240),
         "replay_back_min": 14, "replay_after_s": 240, "first_tie": True,
     },
@@ -735,7 +735,8 @@ REQUIRED = {
     "border_only_in_window": lambda v, cfg: v >= (6 if cfg["reboot_at"] is not None and cfg["n_pkt"] > 1 else 2),
     "sampled_split": lambda v, cfg: v >= (1 if cfg["reboot_at"] is not None and cfg["n_pkt"] > 1 else 0),
     "short_seen_by_both": lambda v, cfg: v >= 20,
-    "wrapped_records": lambda v, cfg: v >= 3,
+    # one in hundreds leaves few edge records open across its wrap on a fresh seed
+    "wrapped_records": lambda v, cfg: v >= (3 if cfg["n_pkt"] < 64 else 1),
     "lateral_hosts": lambda v, cfg: (v >= 4) if not cfg.get("no_lateral") else v == 0,
     "lateral_first_ties": lambda v, cfg: v >= (1 if cfg.get("first_tie") else 0),
 }
