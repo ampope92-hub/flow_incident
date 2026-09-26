@@ -38,8 +38,8 @@ nothing between them and the next ITEM line. `next` is the token for the followi
 the word `end` on the last page. A token is opaque: the archive here writes one way and other
 deployments write another, and the only thing to do with a token is to hand it back. The page
 size is the archive's own setting and differs between deployments. `received_ms` is the
-collector's clock when the datagram arrived, milliseconds since the epoch. A command the
-archive does not know is answered `ERR` and a line of text; `QUIT` closes the connection.
+collector's clock when the datagram arrived, milliseconds since the epoch. An unknown
+command gets `ERR` and a message back, and on `QUIT` the archive hangs up.
 
 ## What a datagram holds
 
@@ -162,7 +162,7 @@ beside the sources is gone before the compiler runs, and it compiles with
     zig build-exe /app/flowkit/src/main.zig -O ReleaseSafe -femit-bin=<its own path>
 
 with no other flag and no libc, then starts the result from `/app/flowkit` with the two
-environment variables set. Every figure in the report is the Zig's own work: the tool is the
-only program that may be started. The build is given 900 seconds and each graded run 600
+environment variables set. Only the submitted Zig sources are compiled, and the tool may
+start no other program. The build is given 900 seconds and each graded run 600
 seconds. `/app/flowkit/build.sh` runs the same compile and
 `/app/flowkit/run.sh` builds and runs it against the archive here; the grader uses neither.

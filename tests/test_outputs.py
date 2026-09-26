@@ -1,7 +1,9 @@
 """Grades the case report. test.sh rebuilt the agent's Zig three times and ran it against the
 shipped archive, a held-back one and a small one reached by host name, capturing stdout to
 /opt/run. Nothing here recomputes the report; every value is compared with the golden the rule
-book in solution/generate_archive.py wrote."""
+book in solution/generate_archive.py wrote, an oracle cross-checked by two independent
+implementations of SPEC.md: that Python rule book and the Zig reference, whose report on each
+archive was written at generation time to golden_ref."""
 import ipaddress
 import json
 import os
@@ -102,6 +104,14 @@ def offsets(dist):
 
 # ── the report ─────────────────────────────────────────────────────────────────────────────
 
+def test_golden_agrees_with_the_zig_reference():
+    """Fixture consistency: for every graded archive the rule book's golden and the Zig
+    reference's report are the same file."""
+    for name in SETS:
+        a = read_bytes(os.path.join(TRUTH, "golden", name + ".json"))
+        assert a == read_bytes(os.path.join(TRUTH, "golden_ref", name + ".json")), f"{name}: the two goldens differ"
+
+
 def test_every_build_succeeded():
     """All three rebuilds of the collected sources produced a regular binary."""
     status = read_bytes(os.path.join(RUN, "build_check.txt")).decode().strip()
@@ -118,9 +128,7 @@ def test_report_is_one_json_object(name):
 
 @pytest.mark.parametrize("name", SETS)
 def test_report_shape(name):
-    """outbound has one object per host in ascending address order with integer bytes and
-    connections; lateral is an array (empty when there is nothing) in ascending order of
-    first_ms then address; lost has one integer per exporter named as in the case line."""
+    """Each table has the members, integer types and order SPEC.md gives."""
     rep = report(name)
     _, case = archive(name)
     hosts = []
@@ -165,8 +173,7 @@ def _lost(name):
 
 
 def test_sample_outbound():
-    """On the shipped archive, read on an address, port, page size and token style other than
-    the ones the agent's own environment used, every outbound row equals the rule book's."""
+    """On the shipped archive every outbound row equals the rule book's."""
     _outbound("sample")
 
 
@@ -181,8 +188,7 @@ def test_sample_lost():
 
 
 def test_hidden_outbound():
-    """On an archive the agent never saw, another network, window, sampling rate and clock
-    error, every outbound row equals the rule book's."""
+    """On the held-back archive every outbound row equals the rule book's."""
     _outbound("hidden")
 
 
@@ -197,8 +203,7 @@ def test_hidden_lost():
 
 
 def test_edge_outbound():
-    """On the small archive, reached by host name, with the edge router sampling one packet in
-    one, every outbound row equals the rule book's."""
+    """On the small archive every outbound row equals the rule book's."""
     _outbound("edge")
 
 

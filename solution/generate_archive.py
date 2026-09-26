@@ -4,6 +4,8 @@
     generate_archive.py --write ROOT        write the environment copy, the verifier sets
                                             and the goldens
     generate_archive.py --set NAME --seed S print the report for a fresh draw (calibrate.py)
+    generate_archive.py --ref ROOT          compile solution/src/main.zig with Zig 0.14.1, run it
+                                            on each written archive, write tests/golden_ref
 
 The site has two routers that export flow records to one collector. Both see every
 connection between the inside network and the internet; only the core sees traffic that stays
@@ -791,13 +793,51 @@ def write_set(root, name, items, case, rep):
         fh.write("\n")
 
 
+ZIG = "/usr/local/lib/python3.13/site-packages/ziglang/zig"
+
+
+def ref_goldens(root):
+    """The Zig reference's own report on each written archive, served by the shipped archive
+    service, as a second golden written independently of rulebook()."""
+    import subprocess
+    import sys
+    import tempfile
+    import time
+    tmp = tempfile.mkdtemp()
+    exe = os.path.join(tmp, "flowkit")
+    subprocess.run([ZIG, "build-exe", os.path.join(root, "solution", "src", "main.zig"), "-O", "ReleaseSafe",
+                    f"-femit-bin={exe}"], check=True, cwd=tmp)
+    os.makedirs(os.path.join(root, "tests", "golden_ref"), exist_ok=True)
+    for port, name in enumerate(("sample", "hidden", "edge"), start=9701):
+        ready = os.path.join(tmp, name + ".ready")
+        srv = subprocess.Popen([sys.executable, os.path.join(root, "tests", "archive", "archive.py"),
+                                "--data", os.path.join(root, "tests", "data", name), "--port", str(port),
+                                "--ready-file", ready])
+        try:
+            while not os.path.exists(ready):
+                time.sleep(0.1)
+            out = subprocess.run([exe], env={"ARCHIVE_HOST": "127.0.0.1", "ARCHIVE_PORT": str(port)},
+                                 capture_output=True, check=True, timeout=600).stdout
+        finally:
+            srv.terminate()
+            srv.wait()
+        with open(os.path.join(root, "tests", "golden_ref", name + ".json"), "w") as fh:
+            json.dump(json.loads(out), fh, separators=(",", ":"), sort_keys=True)
+            fh.write("\n")
+        print(f"{name}: Zig reference report written")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--write", metavar="ROOT")
+    ap.add_argument("--ref", metavar="ROOT")
     ap.add_argument("--set", choices=sorted(SETS))
     ap.add_argument("--seed", type=int)
     ap.add_argument("--coverage", action="store_true")
     args = ap.parse_args()
+    if args.ref:
+        ref_goldens(args.ref)
+        return
     if args.write:
         for name in ("sample", "hidden", "edge"):
             items, case, truth, cov = build(name)

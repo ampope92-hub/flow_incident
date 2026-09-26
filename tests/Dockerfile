@@ -35,6 +35,7 @@ RUN chown -R runner:runner /app && chmod 1755 /app
 # the agent reaches.
 COPY data /opt/truth
 COPY golden /opt/truth/golden
+COPY golden_ref /opt/truth/golden_ref
 COPY archive /opt/archive
 RUN chmod 700 /opt/truth /opt/archive
 
