@@ -1,0 +1,4 @@
+# Test harness, data generators and container setup are not the task's solution language
+*.py linguist-detectable=false
+*.sh linguist-detectable=false
+Dockerfile linguist-detectable=false
